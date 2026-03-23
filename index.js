@@ -13,7 +13,7 @@ app.use((req, res, next) => {
 
 const KALSHI_KEY_ID = process.env.KALSHI_KEY_ID;
 const KALSHI_KEY_SECRET = process.env.KALSHI_KEY_SECRET;
-const BASE_URL = 'trading-api.kalshi.com';
+const BASE_URL = 'api.elections.kalshi.com';
 
 function kalshiRequest(method, path, body, res) {
   const options = {
