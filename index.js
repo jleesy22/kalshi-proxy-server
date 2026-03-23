@@ -1,5 +1,6 @@
 const express = require('express');
 const https = require('https');
+const crypto = require('crypto');
 const app = express();
 app.use(express.json());
 
@@ -11,20 +12,28 @@ app.use((req, res, next) => {
   next();
 });
 
-const KALSHI_KEY_ID = process.env.KALSHI_KEY_ID;
-const KALSHI_KEY_SECRET = process.env.KALSHI_KEY_SECRET;
-const BASE_URL = 'api.elections.kalshi.com';
+const KEY_ID = process.env.KALSHI_KEY_ID;
+const KEY_SECRET = process.env.KALSHI_KEY_SECRET;
+const HOST = 'api.elections.kalshi.com';
 
 function kalshiRequest(method, path, body, res) {
+  const timestamp = Date.now().toString();
+  const msgString = timestamp + method.toUpperCase() + path.split('?')[0];
+  const signature = crypto.createHmac('sha256', KEY_SECRET)
+    .update(msgString).digest('base64');
+
   const options = {
-    hostname: BASE_URL,
+    hostname: HOST,
     path: path,
     method: method,
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Basic ${Buffer.from(KALSHI_KEY_ID + ':' + KALSHI_KEY_SECRET).toString('base64')}`
+      'KALSHI-ACCESS-KEY': KEY_ID,
+      'KALSHI-ACCESS-TIMESTAMP': timestamp,
+      'KALSHI-ACCESS-SIGNATURE': signature
     }
   };
+
   const req = https.request(options, (r) => {
     let data = '';
     r.on('data', chunk => data += chunk);
