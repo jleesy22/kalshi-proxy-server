@@ -16,32 +16,31 @@ app.use((req, res, next) => {
 const KEY_ID = process.env.KALSHI_KEY_ID;
 let PRIVATE_KEY_PEM;
 try {
-  PRIVATE_KEY_PEM = fs.readFileSync('/etc/secrets/private_key.pem', 'utf8');
+  PRIVATE_KEY_PEM = fs.readFileSync('/etc/secrets/private_key.pem', 'utf8').trim();
 } catch(e) {
-  PRIVATE_KEY_PEM = (process.env.KALSHI_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+  PRIVATE_KEY_PEM = (process.env.KALSHI_PRIVATE_KEY || '').replace(/\\n/g, '\n').trim();
 }
-const HOST = 'api.elections.kalshi.com';
 
-app.get('/debug', (req, res) => {
-  res.json({
-    key_id_set: !!KEY_ID,
-    private_key_length: (PRIVATE_KEY_PEM || '').length,
-    private_key_starts: (PRIVATE_KEY_PEM || '').substring(0, 40),
-    has_begin: (PRIVATE_KEY_PEM || '').includes('BEGIN')
-  });
-});
+const HOST = 'api.elections.kalshi.com';
 
 function kalshiRequest(method, path, body, res) {
   try {
     const timestamp = Date.now().toString();
     const msgString = timestamp + method.toUpperCase() + path.split('?')[0];
+    
+    const privateKey = crypto.createPrivateKey({
+      key: PRIVATE_KEY_PEM,
+      format: 'pem'
+    });
+    
     const sign = crypto.createSign('SHA256');
     sign.update(msgString);
     const signature = sign.sign({
-      key: PRIVATE_KEY_PEM,
+      key: privateKey,
       padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
       saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST
     }, 'base64');
+
     const options = {
       hostname: HOST, path, method,
       headers: {
@@ -66,6 +65,14 @@ function kalshiRequest(method, path, body, res) {
     res.status(500).json({ error: e.message });
   }
 }
+
+app.get('/debug', (req, res) => {
+  res.json({
+    key_id_set: !!KEY_ID,
+    private_key_length: (PRIVATE_KEY_PEM || '').length,
+    has_begin: (PRIVATE_KEY_PEM || '').includes('BEGIN')
+  });
+});
 
 app.get('/balance', (req, res) => kalshiRequest('GET', '/trade-api/v2/portfolio/balance', null, res));
 app.get('/positions', (req, res) => kalshiRequest('GET', '/trade-api/v2/portfolio/positions', null, res));
