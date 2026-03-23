@@ -20,27 +20,17 @@ try {
 } catch(e) {
   PRIVATE_KEY_PEM = (process.env.KALSHI_PRIVATE_KEY || '').replace(/\\n/g, '\n').trim();
 }
-
 const HOST = 'api.elections.kalshi.com';
 
 function kalshiRequest(method, path, body, res) {
   try {
     const timestamp = Date.now().toString();
     const msgString = timestamp + method.toUpperCase() + path.split('?')[0];
-    
-    const privateKey = crypto.createPrivateKey({
+    const signature = crypto.sign('sha256', Buffer.from(msgString), {
       key: PRIVATE_KEY_PEM,
-      format: 'pem'
-    });
-    
-    const sign = crypto.createSign('SHA256');
-    sign.update(msgString);
-    const signature = sign.sign({
-      key: privateKey,
       padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
       saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST
-    }, 'base64');
-
+    }).toString('base64');
     const options = {
       hostname: HOST, path, method,
       headers: {
@@ -66,20 +56,10 @@ function kalshiRequest(method, path, body, res) {
   }
 }
 
-app.get('/debug', (req, res) => {
-  res.json({
-    key_id_set: !!KEY_ID,
-    private_key_length: (PRIVATE_KEY_PEM || '').length,
-    has_begin: (PRIVATE_KEY_PEM || '').includes('BEGIN')
-  });
-});
-
+app.get('/debug', (req, res) => res.json({ key_id_set: !!KEY_ID, key_length: (PRIVATE_KEY_PEM||'').length, has_begin: (PRIVATE_KEY_PEM||'').includes('BEGIN') }));
 app.get('/balance', (req, res) => kalshiRequest('GET', '/trade-api/v2/portfolio/balance', null, res));
 app.get('/positions', (req, res) => kalshiRequest('GET', '/trade-api/v2/portfolio/positions', null, res));
-app.get('/markets', (req, res) => {
-  const limit = req.query.limit || 100;
-  kalshiRequest('GET', `/trade-api/v2/markets?limit=${limit}&status=open`, null, res);
-});
+app.get('/markets', (req, res) => kalshiRequest('GET', `/trade-api/v2/markets?limit=${req.query.limit||100}&status=open`, null, res));
 app.post('/place-order', (req, res) => kalshiRequest('POST', '/trade-api/v2/portfolio/orders', req.body, res));
 app.get('/', (req, res) => res.json({ status: 'Kalshi proxy running' }));
 
