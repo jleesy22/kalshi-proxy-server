@@ -13,15 +13,24 @@ app.use((req, res, next) => {
 });
 
 const KEY_ID = process.env.KALSHI_KEY_ID;
-const KEY_SECRET = process.env.KALSHI_KEY_SECRET;
+const PRIVATE_KEY_PEM = process.env.KALSHI_PRIVATE_KEY;
 const HOST = 'api.elections.kalshi.com';
 
-function kalshiRequest(method, path, body, res) {
+function signRequest(method, path) {
   const timestamp = Date.now().toString();
   const msgString = timestamp + method.toUpperCase() + path.split('?')[0];
-  const signature = crypto.createHmac('sha256', KEY_SECRET)
-    .update(msgString).digest('base64');
+  const sign = crypto.createSign('SHA256');
+  sign.update(msgString);
+  const signature = sign.sign({
+    key: PRIVATE_KEY_PEM,
+    padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+    saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST
+  }, 'base64');
+  return { timestamp, signature };
+}
 
+function kalshiRequest(method, path, body, res) {
+  const { timestamp, signature } = signRequest(method, path);
   const options = {
     hostname: HOST,
     path: path,
@@ -33,7 +42,6 @@ function kalshiRequest(method, path, body, res) {
       'KALSHI-ACCESS-SIGNATURE': signature
     }
   };
-
   const req = https.request(options, (r) => {
     let data = '';
     r.on('data', chunk => data += chunk);
@@ -47,23 +55,13 @@ function kalshiRequest(method, path, body, res) {
   req.end();
 }
 
-app.get('/balance', (req, res) => {
-  kalshiRequest('GET', '/trade-api/v2/portfolio/balance', null, res);
-});
-
-app.get('/positions', (req, res) => {
-  kalshiRequest('GET', '/trade-api/v2/portfolio/positions', null, res);
-});
-
+app.get('/balance', (req, res) => kalshiRequest('GET', '/trade-api/v2/portfolio/balance', null, res));
+app.get('/positions', (req, res) => kalshiRequest('GET', '/trade-api/v2/portfolio/positions', null, res));
 app.get('/markets', (req, res) => {
   const limit = req.query.limit || 100;
   kalshiRequest('GET', `/trade-api/v2/markets?limit=${limit}&status=open`, null, res);
 });
-
-app.post('/place-order', (req, res) => {
-  kalshiRequest('POST', '/trade-api/v2/portfolio/orders', req.body, res);
-});
-
+app.post('/place-order', (req, res) => kalshiRequest('POST', '/trade-api/v2/portfolio/orders', req.body, res));
 app.get('/', (req, res) => res.json({ status: 'Kalshi proxy running' }));
 
 const PORT = process.env.PORT || 10000;
