@@ -1,6 +1,7 @@
 const express = require('express');
 const https = require('https');
 const crypto = require('crypto');
+const fs = require('fs');
 const app = express();
 app.use(express.json());
 
@@ -13,9 +14,22 @@ app.use((req, res, next) => {
 });
 
 const KEY_ID = process.env.KALSHI_KEY_ID;
-const RAW_KEY = process.env.KALSHI_PRIVATE_KEY || '';
-const PRIVATE_KEY_PEM = RAW_KEY.replace(/\\n/g, '\n');
+let PRIVATE_KEY_PEM;
+try {
+  PRIVATE_KEY_PEM = fs.readFileSync('/etc/secrets/private_key.pem', 'utf8');
+} catch(e) {
+  PRIVATE_KEY_PEM = (process.env.KALSHI_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+}
 const HOST = 'api.elections.kalshi.com';
+
+app.get('/debug', (req, res) => {
+  res.json({
+    key_id_set: !!KEY_ID,
+    private_key_length: (PRIVATE_KEY_PEM || '').length,
+    private_key_starts: (PRIVATE_KEY_PEM || '').substring(0, 40),
+    has_begin: (PRIVATE_KEY_PEM || '').includes('BEGIN')
+  });
+});
 
 function kalshiRequest(method, path, body, res) {
   try {
@@ -28,11 +42,8 @@ function kalshiRequest(method, path, body, res) {
       padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
       saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST
     }, 'base64');
-
     const options = {
-      hostname: HOST,
-      path: path,
-      method: method,
+      hostname: HOST, path, method,
       headers: {
         'Content-Type': 'application/json',
         'KALSHI-ACCESS-KEY': KEY_ID,
@@ -40,7 +51,6 @@ function kalshiRequest(method, path, body, res) {
         'KALSHI-ACCESS-SIGNATURE': signature
       }
     };
-
     const req = https.request(options, (r) => {
       let data = '';
       r.on('data', chunk => data += chunk);
@@ -53,7 +63,7 @@ function kalshiRequest(method, path, body, res) {
     if (body) req.write(JSON.stringify(body));
     req.end();
   } catch(e) {
-    res.status(500).json({ error: e.message, hint: 'Check KALSHI_PRIVATE_KEY format' });
+    res.status(500).json({ error: e.message });
   }
 }
 
